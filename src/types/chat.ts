@@ -1,4 +1,5 @@
-﻿export type MessengerPlatform = 'telegram' | 'bale';
+export type MessengerPlatform = 'telegram' | 'bale';
+export const ALL_SUPPORTED_PLATFORMS: MessengerPlatform[] = ['telegram', 'bale'];
 export type ChatType = 'channel' | 'group' | 'supergroup';
 
 export interface Chat {

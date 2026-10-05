@@ -35,6 +35,7 @@ export const MessagingPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showLinkingModal, setShowLinkingModal] = useState(false);
   const [previews, setPreviews] = useState<Record<number, ChatPreviewInfo>>({});
+  const [pollIntervalMs, setPollIntervalMs] = useState<number | null>(4000);
 
   const selectedChatRef = useRef<Chat | null>(null);
   useEffect(() => {
@@ -118,13 +119,16 @@ export const MessagingPage: React.FC = () => {
     fetchChats(false);
   }, [fetchChats]);
 
-  // Periodic polling for newly linked chats & background unseen message counts (every 10 seconds)
+  // Periodic polling for newly linked chats & background unseen message counts (synced with ChatWindow polling)
   useEffect(() => {
+    if (pollIntervalMs === null) return;
+
     const interval = setInterval(() => {
       fetchChats(true);
-    }, 10000);
+    }, pollIntervalMs);
+
     return () => clearInterval(interval);
-  }, [fetchChats]);
+  }, [fetchChats, pollIntervalMs]);
 
   // When a chat is selected, immediately mark its unseen messages as seen
   const handleSelectChat = (chat: Chat) => {
@@ -178,6 +182,8 @@ export const MessagingPage: React.FC = () => {
         onOpenLinkModal={() => setShowLinkingModal(true)}
         onChatUpdated={() => fetchChats(true)}
         onActiveChatMessages={handleActiveChatMessages}
+        pollIntervalMs={pollIntervalMs}
+        onPollIntervalChange={setPollIntervalMs}
       />
 
       {/* Chat Linking Modal */}

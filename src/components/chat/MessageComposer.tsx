@@ -4,6 +4,7 @@ import { BroadcastAttachmentType } from '../../types/broadcast';
 import { validateAttachmentBatch, formatFileSize } from '../../utils/file';
 import { EmojiPicker } from './EmojiPicker';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { ALL_SUPPORTED_PLATFORMS } from '../../types/chat';
 
 interface MessageComposerProps {
   onSendMessage: (
@@ -30,7 +31,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const [fileError, setFileError] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(
-    defaultPlatform ? [defaultPlatform] : ['telegram', 'bale']
+    ALL_SUPPORTED_PLATFORMS
   );
 
   const fileInputRef = useRef<HTMLInputElement>(null);

@@ -1,4 +1,4 @@
-﻿export type Language = 'en' | 'fa';
+export type Language = 'en' | 'fa';
 
 export type TranslationKey = string;
 

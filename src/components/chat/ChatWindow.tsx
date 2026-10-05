@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Chat, ChatMessage } from "../../types/chat";
+import { Chat, ChatMessage, ALL_SUPPORTED_PLATFORMS } from "../../types/chat";
 import { chatsApi } from "../../api/chats";
 import { attachmentsApi } from "../../api/attachments";
 import { broadcastsApi } from "../../api/broadcasts";
@@ -33,6 +33,8 @@ interface ChatWindowProps {
   onOpenLinkModal: () => void;
   onChatUpdated?: () => void;
   onActiveChatMessages?: (chatId: number, messages: ChatMessage[]) => void;
+  pollIntervalMs?: number | null;
+  onPollIntervalChange?: (interval: number | null) => void;
 }
 
 interface ContextMenuState {
@@ -46,6 +48,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   onOpenLinkModal,
   onChatUpdated,
   onActiveChatMessages,
+  pollIntervalMs,
+  onPollIntervalChange,
 }) => {
   const { showToast } = useToast();
   const { hasPermission } = usePermission();
@@ -66,20 +70,52 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     { label: "1m", value: 60000 },
     { label: "Off", value: null },
   ];
-  const [pollIntervalMs, setPollIntervalMs] = useState<number | null>(4000);
+  const [internalPollIntervalMs, setInternalPollIntervalMs] = useState<number | null>(4000);
+  const currentPollIntervalMs = pollIntervalMs !== undefined ? pollIntervalMs : internalPollIntervalMs;
+
+  const handleSetPollInterval = (val: number | null) => {
+    if (onPollIntervalChange) {
+      onPollIntervalChange(val);
+    } else {
+      setInternalPollIntervalMs(val);
+    }
+  };
+
   const [showIntervalMenu, setShowIntervalMenu] = useState(false);
+  const intervalMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showIntervalMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (intervalMenuRef.current && !intervalMenuRef.current.contains(e.target as Node)) {
+        setShowIntervalMenu(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showIntervalMenu]);
 
   // Broadcast Edit state
-  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
+    null,
+  );
   const [editText, setEditText] = useState("");
   const [isUpdatingBroadcast, setIsUpdatingBroadcast] = useState(false);
 
   // Broadcast Delete state
-  const [deletingMessage, setDeletingMessage] = useState<ChatMessage | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState<ChatMessage | null>(
+    null,
+  );
   const [isDeletingBroadcast, setIsDeletingBroadcast] = useState(false);
 
   // Local Delete state
-  const [deletingLocalMessage, setDeletingLocalMessage] = useState<ChatMessage | null>(null);
+  const [deletingLocalMessage, setDeletingLocalMessage] =
+    useState<ChatMessage | null>(null);
   const [isDeletingLocal, setIsDeletingLocal] = useState(false);
 
   // Context Menu state
@@ -87,7 +123,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   // Batch Selection state
   const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<number>>(new Set());
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<number>>(
+    new Set(),
+  );
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
@@ -101,7 +139,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const { scrollTop, scrollHeight, clientHeight } =
+      messagesContainerRef.current;
     const distanceToBottom = scrollHeight - scrollTop - clientHeight;
     setShowScrollBottom(distanceToBottom > 120);
   };
@@ -173,7 +212,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                   !a.download_url &&
                   prevDownloadUrlByAttId.has(a.id)
                     ? { ...a, download_url: prevDownloadUrlByAttId.get(a.id) }
-                    : a
+                    : a,
                 ),
               };
             });
@@ -181,7 +220,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           let sorted = [...(res.messages || [])].sort(
             (a, b) =>
               new Date(a.message_timestamp).getTime() -
-              new Date(b.message_timestamp).getTime()
+              new Date(b.message_timestamp).getTime(),
           );
           sorted = mergeKnownAttachments(sorted);
           setMessages(sorted);
@@ -191,7 +230,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           const needsAttachments = sorted.filter(
             (m) =>
               m.has_attachments &&
-              (!m.attachments || m.attachments.length === 0)
+              (!m.attachments || m.attachments.length === 0),
           );
           if (
             needsAttachments.length > 0 &&
@@ -202,13 +241,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                 try {
                   const atts = await attachmentsApi.getForMessage(
                     chat.id,
-                    msg.id
+                    msg.id,
                   );
                   return { id: msg.id, atts };
                 } catch {
                   return { id: msg.id, atts: [] };
                 }
-              })
+              }),
             );
             const attMap: Record<number, any[]> = {};
             enriched.forEach((r) => {
@@ -235,8 +274,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             activeChatIdRef.current === chat.id
           ) {
             try {
-              const links =
-                await attachmentsApi.getDownloadURLsBatch(pendingAttachmentIDs);
+              const links = await attachmentsApi.getDownloadURLsBatch(
+                pendingAttachmentIDs,
+              );
               if (activeChatIdRef.current === chat.id) {
                 setMessages((prev) =>
                   prev.map((m) => {
@@ -246,10 +286,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                       attachments: m.attachments.map((a: any) =>
                         a && a.id && links[a.id]
                           ? { ...a, download_url: links[a.id] }
-                          : a
+                          : a,
                       ),
                     };
-                  })
+                  }),
                 );
               }
             } catch {
@@ -266,7 +306,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         setIsSyncing(false);
       }
     },
-    [chat?.id]
+    [chat?.id],
   );
 
   // Initial fetch on chat change
@@ -283,27 +323,27 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   // HTTP Polling
   useEffect(() => {
-    if (!chat || pollIntervalMs === null) return;
+    if (!chat || currentPollIntervalMs === null) return;
 
     const interval = setInterval(() => {
       fetchHistory(true);
-    }, pollIntervalMs);
+    }, currentPollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [chat?.id, fetchHistory, pollIntervalMs]);
+  }, [chat?.id, fetchHistory, currentPollIntervalMs]);
 
   const handleSendMessage = async (
     text: string,
     files: File[],
     attachmentType?: BroadcastAttachmentType,
-    platforms?: string[]
+    platforms?: string[],
   ) => {
     if (!chat) return;
 
     try {
       setIsSending(true);
       const targetPlatforms =
-        platforms && platforms.length > 0 ? platforms : [chat.platform];
+        platforms && platforms.length > 0 ? platforms : ALL_SUPPORTED_PLATFORMS;
 
       await broadcastsApi.send({
         message: text,
@@ -334,7 +374,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setIsUpdatingBroadcast(true);
       await broadcastsApi.update(editingMessage.broadcast_uuid, {
         message: editText.trim(),
-        platforms: [chat?.platform || "telegram"],
+        platforms: ALL_SUPPORTED_PLATFORMS,
       });
       showToast(t("success"), "success");
       setEditingMessage(null);
@@ -351,7 +391,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     try {
       setIsDeletingBroadcast(true);
       await broadcastsApi.delete(deletingMessage.broadcast_uuid, {
-        platforms: [chat?.platform || "telegram"],
+        platforms: ALL_SUPPORTED_PLATFORMS,
       });
       showToast(t("success"), "success");
       setDeletingMessage(null);
@@ -426,7 +466,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       if (broadcastUUIDs.length > 0) {
         try {
           await broadcastsApi.deleteBatch({
-            platforms: ["telegram", "bale"],
+            platforms: ALL_SUPPORTED_PLATFORMS,
             brodcast_ids: broadcastUUIDs,
           });
         } catch (err: any) {
@@ -436,7 +476,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
       // Delete from local history
       await Promise.allSettled(
-        selectedMsgs.map((m) => chatsApi.deleteMessage(chat.id, m.id))
+        selectedMsgs.map((m) => chatsApi.deleteMessage(chat.id, m.id)),
       );
 
       showToast(t("success"), "success");
@@ -456,7 +496,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-blue-500 mb-4 shadow-xl">
           <MessageSquare className="w-8 h-8" />
         </div>
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">{t("noActiveChatTitle")}</h3>
+        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+          {t("noActiveChatTitle")}
+        </h3>
         <p className="text-sm text-slate-400 max-w-sm mb-6 leading-relaxed">
           {t("noActiveChatDesc")}
         </p>
@@ -474,7 +516,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   return (
     <div className="flex-1 h-full bg-slate-50/60 dark:bg-slate-950 flex flex-col min-w-0 relative">
       {/* Active Chat Header */}
-      <div className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 backdrop-blur-md px-4 flex items-center justify-between shrink-0">
+      <div className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 backdrop-blur-md px-4 flex items-center justify-between shrink-0 relative z-30">
         <div className="flex items-center gap-3 min-w-0">
           <div className="relative">
             <PlatformBadge
@@ -528,7 +570,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           </button>
 
           {/* Polling Interval Picker */}
-          <div className="relative">
+          <div className="relative" ref={intervalMenuRef}>
             <button
               type="button"
               onClick={() => setShowIntervalMenu((v) => !v)}
@@ -537,9 +579,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             >
               <Clock className="w-3 h-3 text-blue-400" />
               <span>
-                {pollIntervalMs === null
+                {currentPollIntervalMs === null
                   ? "Sync: Off"
-                  : `Sync: ${POLL_INTERVAL_OPTIONS.find((o) => o.value === pollIntervalMs)?.label ?? `${pollIntervalMs / 1000}s`}`}
+                  : `Sync: ${
+                      POLL_INTERVAL_OPTIONS.find(
+                        (o) => o.value === currentPollIntervalMs,
+                      )?.label ?? `${currentPollIntervalMs / 1000}s`
+                    }`}
               </span>
               {isSyncing && (
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
@@ -547,34 +593,36 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             </button>
 
             {showIntervalMenu && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowIntervalMenu(false)}
-                />
-                <div className="absolute right-0 top-9 z-50 w-32 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 text-xs">
-                  {POLL_INTERVAL_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      onClick={() => {
-                        setPollIntervalMs(opt.value);
-                        setShowIntervalMenu(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors hover:bg-slate-800 cursor-pointer ${
-                        opt.value === pollIntervalMs
-                          ? "text-blue-600 dark:text-blue-400 font-semibold"
-                          : "text-slate-700 dark:text-slate-300"
-                      }`}
-                    >
-                      {opt.label}
-                      {opt.value === pollIntervalMs && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </>
+              <div className="absolute end-0 top-full mt-1.5 z-50 w-32 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 text-xs">
+                {POLL_INTERVAL_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSetPollInterval(opt.value);
+                      setShowIntervalMenu(false);
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSetPollInterval(opt.value);
+                      setShowIntervalMenu(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-start transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${
+                      opt.value === currentPollIntervalMs
+                        ? "text-blue-600 dark:text-blue-400 font-semibold"
+                        : "text-slate-700 dark:text-slate-300"
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {opt.value === currentPollIntervalMs && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 
@@ -587,7 +635,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             title={t("refresh")}
           >
             <RefreshCw
-              className={`w-4 h-4 ${isLoading || isSyncing ? "animate-spin text-blue-400" : ""}`}
+              className={`w-4 h-4 ${
+                isLoading || isSyncing ? "animate-spin text-blue-400" : ""
+              }`}
             />
           </button>
 
@@ -604,7 +654,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       </div>
 
       {/* Messages Feed Area */}
-      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin relative">
+      <div
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin relative"
+      >
         {isLoading && messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500">
             <RefreshCw className="w-6 h-6 animate-spin text-blue-500 mb-2" />
@@ -651,7 +705,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
               onClick={toggleSelectAll}
               className="text-blue-400 hover:text-blue-300 font-medium px-2 py-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              {selectedMessageIds.size === messages.length ? t("deselectAll") : t("selectAll")}
+              {selectedMessageIds.size === messages.length
+                ? t("deselectAll")
+                : t("selectAll")}
             </button>
           </div>
 
@@ -678,13 +734,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         </div>
       )}
 
-            {/* Scroll to Bottom Floating Button (Telegram style) */}
+      {/* Scroll to Bottom Floating Button (Telegram style) */}
       {showScrollBottom && (
         <button
           type="button"
           onClick={() => scrollToBottom(true)}
           className="absolute end-6 bottom-24 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 border border-slate-200 dark:border-slate-700 shadow-xl flex items-center justify-center transition-all cursor-pointer animate-in fade-in zoom-in-95 duration-150"
-          title={isFA ? 'برو به پیام‌های جدید' : 'Scroll to latest message'}
+          title={isFA ? "برو به پیام‌های جدید" : "Scroll to latest message"}
         >
           <ChevronDown className="w-5 h-5" />
         </button>
@@ -716,7 +772,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             {/* Context Menu Header */}
             <div className="px-3 py-1.5 border-b border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase flex items-center justify-between">
               <span>
-                {contextMenu.message.broadcast_uuid ? t("broadcastMessage") : t("chatMessage")}
+                {contextMenu.message.broadcast_uuid
+                  ? t("broadcastMessage")
+                  : t("chatMessage")}
               </span>
               {contextMenu.message.broadcast_uuid && (
                 <span className="flex items-center gap-1 text-indigo-400">
@@ -829,9 +887,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         maxWidth="md"
       >
         <div className="space-y-4">
-          <p className="text-xs text-slate-400">
-            {t("editBroadcastDesc")}
-          </p>
+          <p className="text-xs text-slate-400">{t("editBroadcastDesc")}</p>
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-300">
               {t("updatedContent")}
@@ -896,7 +952,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         onClose={() => setShowBatchDeleteConfirm(false)}
         onConfirm={handleBatchDelete}
         title={t("confirmBatchDeleteChatTitle")}
-        message={t("confirmBatchDeleteChatMessage", { count: selectedMessageIds.size })}
+        message={t("confirmBatchDeleteChatMessage", {
+          count: selectedMessageIds.size,
+        })}
         confirmText={t("deleteSelectedMessages")}
         variant="danger"
         isLoading={isBatchDeleting}
