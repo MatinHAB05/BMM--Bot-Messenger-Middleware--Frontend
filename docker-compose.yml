@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
     container_name: bmm-dashboard-frontend
     restart: unless-stopped
     ports:
